@@ -74,7 +74,7 @@ The most contributed Agent Skills repository, built and maintained together with
 | [Cloudflare](#skills-by-cloudflare-team) | [Netlify](#skills-by-netlify-team) | [Google Labs (Stitch)](#skills-by-google-labs-stitch) | [Google Workspace CLI](#skills-by-google-workspace-cli) |
 | [Hugging Face](#skills-by-hugging-face-team) | [Trail of Bits](#security-skills-by-trail-of-bits-team) | [Sentry](#skills-by-sentry-team-for-their-dev-team) | [Microsoft](#skills-by-microsoft) |
 | [fal.ai](#skills-by-falai-team) | [WordPress](#skills-by-wordpress-development-team) | [OpenAI](#skills-by-openai) | [Figma](#skills-by-figma) |
-| [Corey Haines](#marketing-skills-by-corey-haines) | [Binance](#skills-by-binance) | [Dean Peters](#product-manager-skills-by-dean-peters) | [Paweł Huryn](#product-management-skills-by-pawel-huryn) |
+| [Corey Haines](#marketing-skills-by-corey-haines) | [Binance](#skills-by-binance) | [FarmDash](#skills-by-farmdash) | [Dean Peters](#product-manager-skills-by-dean-peters) | [Paweł Huryn](#product-management-skills-by-pawel-huryn) |
 | [MiniMax](#skills-by-minimax-team) | [DuckDB](#skills-by-duckdb) | [GSAP](#skills-by-gsap-greensock) | [Garry Tan (gstack)](#skills-by-garry-tan-gstack) |
 | [Notion](#skills-by-notion) | [Resend](#skills-by-resend) | [Addy Osmani (Web Quality)](#skills-by-addy-osmani-web-quality) | [MongoDB](#skills-by-mongodb) |
 | [Kim Barrett (Advertising)](#advertising-skills-by-kim-barrett) | [Apollo GraphQL](#skills-by-apollo-graphql) | [Auth0](#skills-by-auth0) | [Brave](#skills-by-brave) |
@@ -1386,6 +1386,15 @@ Official MongoDB Agent Skills for agentic workflows — connection management, s
 
 </details>
 
+<details>
+<summary><h3 style="display:inline">Skills by FarmDash</h3></summary>
+
+Official DeFi farming intelligence and execution skills from the FarmDash team. Zero-custody architecture across all skills.
+
+- **[farmdash/trail-intelligence](https://farmdash.one/openclaw-skills/farmdash-trail-intelligence/SKILL.md)** - DeFi farming research: Trail Heat scoring, sybil audits, portfolio simulation, and analysis-to-action workflows
+- **[farmdash/signal-architect](https://farmdash.one/openclaw-skills/farmdash-signal-architect/SKILL.md)** - Zero-custody spot and cross-chain swap execution with referral routing and 75bps transparent fees
+
+</details>
 <br/>
 
 <a href="https://github.com/VoltAgent/voltagent">
