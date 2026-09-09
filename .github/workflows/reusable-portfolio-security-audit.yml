@@ -1,0 +1,296 @@
+name: Reusable Portfolio Security Audit
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.x
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Credential, history, workflow, and packaging audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, json, re, subprocess, sys
+          from pathlib import Path
+
+          failures, warnings, historical = [], [], []
+          templates = {'.env.example', 'env.example', '.env.sample', 'env.sample'}
+          placeholders = (
+            'your_', 'your-', 'example', 'placeholder', 'replace_', 'replace-',
+            'change_me', 'changeme', 'test_', 'test-', '<redacted>', '<secret>',
+          )
+          forbidden_file = re.compile(
+            r'(^|/)(?:\.env(?:\..+)?|\.pypirc|\.netrc|credentials\.json|'
+            r'service-account[^/]*\.json|id_(?:rsa|ed25519)|[^/]+\.(?:pem|p12|pfx|key|jks|keystore))$',
+            re.I,
+          )
+          secret_name = re.compile(
+            r'(?i)^(?:API[_-]?KEY|API[_-]?TOKEN|PRIVATE[_-]?KEY|WALLET[_-]?PRIVATE[_-]?KEY|'
+            r'SECRET[_-]?KEY|CLIENT[_-]?SECRET|APP[_-]?SECRET|JWT[_-]?SECRET|AUTH[_-]?SECRET|'
+            r'AUTH[_-]?TOKEN|ACCESS[_-]?TOKEN|SERVICE[_-]?ROLE[_-]?KEY|SESSION[_-]?STRING|'
+            r'ENCRYPTION[_-]?KEY|DISCORD[_-]?BOT[_-]?TOKEN|TELEGRAM[_-]?BOT[_-]?TOKEN|PASSWORD)$'
+          )
+
+          token_patterns = [
+            ('private/wallet key', re.compile(r'(?i)(?:private|wallet|secret|clean|compromised)[_ -]*(?:key|keypair|pk)[^\n]{0,100}?(?:0x)?[0-9a-f]{64}')),
+            ('Solana keypair array', re.compile(r'(?is)(?:secret|private|wallet)[_ -]*(?:key|keypair|pk)[^=\n]{0,60}[=:]\s*\[(?:\s*\d{1,3}\s*,){31,}\s*\d{1,3}\s*\]')),
+            ('Solana base58 secret', re.compile(r'(?i)(?:private|secret|wallet)[_ -]*(?:key|keypair|pk)[^\n]{0,80}?[=:][ \t]*["\']?[1-9A-HJ-NP-Za-km-z]{80,100}')),
+            ('seed phrase', re.compile(r'(?i)(?:mnemonic|seed[_ -]*phrase)[ \t]*[:=][ \t]*["\']?(?:[a-z]{3,12}\s+){11,23}[a-z]{3,12}')),
+            ('PEM private key', re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')),
+            ('GitHub token', re.compile(r'\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b')),
+            ('OpenAI/OpenRouter key', re.compile(r'\b(?:sk-(?:proj-)?|sk-or-v1-)[A-Za-z0-9_-]{20,}\b')),
+            ('Anthropic key', re.compile(r'\bsk-ant-[A-Za-z0-9_-]{20,}\b')),
+            ('Google OAuth secret', re.compile(r'\bGOCSPX-[A-Za-z0-9_-]{20,}\b')),
+            ('Google API key', re.compile(r'\bAIza[0-9A-Za-z_-]{30,}\b')),
+            ('AWS access key', re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b')),
+            ('Telegram token', re.compile(r'\b\d{8,12}:[A-Za-z0-9_-]{30,}\b')),
+            ('Stripe live key', re.compile(r'\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b')),
+            ('Slack token', re.compile(r'\bxox[baprs]-[A-Za-z0-9-]{20,}\b')),
+            ('package/registry token', re.compile(r'\b(?:npm_|glpat-|hf_)[A-Za-z0-9_-]{20,}\b')),
+            ('keyed RPC', re.compile(r'https?://[^\s"\']*(?:(?:alchemy\.com/v2|infura\.io/v3)/[A-Za-z0-9_-]{16,}|(?:helius-rpc\.com|helius\.xyz)[^\s"\']*api-key=[A-Za-z0-9_-]{16,})', re.I)),
+            ('URL credentials', re.compile(r'(?i)https?://[^\s/:@]{1,100}:[^\s/@]{8,}@[^\s/]+')),
+          ]
+          jwt_re = re.compile(r'\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b')
+          assignment_re = re.compile(r'''^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_-]*)\s*[:=]\s*(.+?)\s*[,;]?\s*$''')
+          quoted_value_re = re.compile(r'''^["']([^"']+)["']$''')
+          env_config_suffixes = {'.env', '.ini', '.conf', '.properties', '.yaml', '.yml', '.toml'}
+
+          def placeholder(value):
+            low = value.lower()
+            return any(marker in low for marker in placeholders)
+
+          def env_style_file(path):
+            p = Path(path)
+            low = p.name.lower()
+            return low.startswith('.env') or low.startswith('env.') or p.suffix.lower() in env_config_suffixes
+
+          def firebase_public(path, label):
+            return Path(path).name == 'firebase-applet-config.json' and label == 'Google API key'
+
+          def service_role_jwt(text):
+            for token in jwt_re.findall(text):
+              try:
+                payload = token.split('.')[1] + '=' * (-len(token.split('.')[1]) % 4)
+                decoded = json.loads(base64.urlsafe_b64decode(payload))
+                if str(decoded.get('role', '')).lower() == 'service_role':
+                  return True
+              except Exception:
+                pass
+            return False
+
+          def literal_assignment_findings(path, text):
+            out = []
+            config_file = env_style_file(path)
+            for line in text.splitlines():
+              match = assignment_re.match(line)
+              if not match:
+                continue
+              name, raw = match.group(1), match.group(2).strip()
+              if not secret_name.match(name):
+                continue
+              quoted = quoted_value_re.match(raw)
+              if quoted:
+                value = quoted.group(1)
+                if len(value) >= 20 and not placeholder(value):
+                  out.append((path, 'quoted secret assignment'))
+                continue
+              # In source code, `apiKey: advancedConfig.aiApiKey` is a reference,
+              # not a credential. Unquoted literals are only interpreted as secret
+              # assignments in env/config-style files.
+              if config_file and re.fullmatch(r'[A-Za-z0-9+/=_:@.-]{20,}', raw) and not placeholder(raw):
+                out.append((path, 'unquoted secret assignment'))
+            return out
+
+          def scan_text(path, text):
+            out = []
+            if service_role_jwt(text):
+              out.append((path, 'Supabase/service-role JWT'))
+            for label, pattern in token_patterns:
+              match = pattern.search(text)
+              if match and not firebase_public(path, label) and not placeholder(match.group(0)):
+                out.append((path, label))
+            out.extend(literal_assignment_findings(path, text))
+            return out
+
+          tracked = [x for x in subprocess.check_output(['git', 'ls-files', '-z']).decode(errors='ignore').split('\0') if x]
+          for file in tracked:
+            p = Path(file)
+            base = p.name
+            normalized = file.replace('\\', '/')
+            if forbidden_file.search(normalized) and base not in templates:
+              failures.append((file, 'credential-bearing filename'))
+            try:
+              if p.stat().st_size > 8_000_000:
+                warnings.append(f'current file not content-scanned (>8 MB): {file}')
+                continue
+              text = p.read_text('utf-8', errors='ignore')
+            except Exception:
+              continue
+            if base == '.npmrc' and '_authToken=' in text and '${' not in text:
+              failures.append((file, 'literal npm registry credential'))
+            if text.startswith('version https://git-lfs.github.com/spec/v1'):
+              warnings.append(f'Git LFS content not scanned: {file}')
+            failures.extend(scan_text(file, text))
+
+          try:
+            for row in subprocess.check_output(['git', 'ls-files', '--stage'], text=True, errors='ignore').splitlines():
+              if row.startswith('160000 '):
+                warnings.append(f'git submodule not recursively scanned: {row.rsplit(chr(9), 1)[-1]}')
+          except Exception:
+            pass
+
+          seen = set()
+          for row in subprocess.check_output(['git', 'rev-list', '--objects', '--all'], text=True, errors='ignore').splitlines():
+            parts = row.split(' ', 1)
+            oid = parts[0]
+            path = parts[1] if len(parts) > 1 else '<unknown>'
+            if oid in seen:
+              continue
+            seen.add(oid)
+            base = Path(path).name
+            if forbidden_file.search(path.replace('\\', '/')) and base not in templates:
+              historical.append((path, 'historical credential-bearing filename'))
+            try:
+              if subprocess.check_output(['git', 'cat-file', '-t', oid], text=True, stderr=subprocess.DEVNULL).strip() != 'blob':
+                continue
+              size = int(subprocess.check_output(['git', 'cat-file', '-s', oid], text=True, stderr=subprocess.DEVNULL).strip())
+              if size > 4_000_000:
+                warnings.append(f'historical blob not content-scanned (>4 MB): {path}')
+                continue
+              blob = subprocess.check_output(['git', 'cat-file', '-p', oid], stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+            except Exception:
+              continue
+            found = scan_text(path, blob)
+            if found:
+              historical.append(found[0])
+
+          workflow_paths = []
+          if Path('.github/workflows').exists():
+            workflow_paths = list(Path('.github/workflows').glob('*.yml')) + list(Path('.github/workflows').glob('*.yaml'))
+          mutable = re.compile(r'uses:\s*([^\s]+)@(main|master|latest|HEAD)\b', re.I)
+          version_tag = re.compile(r'uses:\s*([^\s]+)@v\d+(?:\.\d+)*\b', re.I)
+          untrusted = re.compile(r'\$\{\{\s*github\.event\.pull_request\.(?:title|body|head\.ref|head\.label)\s*\}\}')
+
+          def structural_yaml(text):
+            out, skip_indent = [], None
+            for line in text.splitlines():
+              indent = len(line) - len(line.lstrip(' '))
+              if skip_indent is not None:
+                if line.strip() and indent > skip_indent:
+                  continue
+                skip_indent = None
+              if re.match(r'^\s*run:\s*[|>]\s*$', line):
+                skip_indent = indent
+                continue
+              out.append(line)
+            return '\n'.join(out)
+
+          target_trigger = 'pull_request' + '_target:'
+          for path in workflow_paths:
+            raw = path.read_text('utf-8', errors='ignore')
+            structural = structural_yaml(raw)
+            if re.search(r'(?m)^\s*permissions:\s*write-all\s*$', structural):
+              failures.append((str(path), 'permissions: write-all'))
+            if target_trigger in structural and re.search(r'uses:\s*actions/checkout@', structural):
+              failures.append((str(path), 'pull_request_target + checkout requires isolation review'))
+            if untrusted.search(structural):
+              failures.append((str(path), 'untrusted PR metadata used structurally/in shell'))
+            for match in mutable.finditer(structural):
+              failures.append((str(path), f'mutable action/workflow ref {match.group(1)}@{match.group(2)}'))
+            for match in version_tag.finditer(structural):
+              warnings.append(f'{path}: mutable action version tag {match.group(0).strip()}')
+            if re.search(r'(?i)(?:curl|wget)[^\n|]*\|\s*(?:sudo\s+)?(?:sh|bash)\b', raw):
+              warnings.append(f'{path}: remote content piped to shell')
+            if re.search(r'(?m)^\s*(?:contents|actions|pull-requests):\s*write\s*$', structural):
+              warnings.append(f'{path}: write-capable GitHub permission requires review')
+
+          public_secret = re.compile(r'\b(?:VITE_|NEXT_PUBLIC_|REACT_APP_)[A-Z0-9_]*(?:PRIVATE|SECRET|SERVICE_ROLE|ADMIN|SIGNING|ENCRYPTION|JWT)[A-Z0-9_]*\b')
+          for file in tracked:
+            p = Path(file)
+            if '.github' in p.parts or p.suffix.lower() in {'.lock', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf'}:
+              continue
+            try:
+              if p.stat().st_size <= 2_000_000 and public_secret.search(p.read_text('utf-8', errors='ignore')):
+                failures.append((file, 'privileged-looking secret uses browser-public env prefix'))
+            except Exception:
+              pass
+
+          package = Path('package.json')
+          if package.exists():
+            try:
+              manifest = json.loads(package.read_text('utf-8'))
+            except Exception:
+              manifest = {}
+            build = manifest.get('build') if isinstance(manifest, dict) else None
+            if isinstance(build, dict):
+              bad = re.compile(r'(?i)(?:^|/)(?:\.env(?:\.|$)|credentials\.json$|service-account|\.encryption_key$|[^/]+\.(?:pem|p12|pfx|key)$)')
+              def walk(value):
+                if isinstance(value, str) and bad.search(value.replace('\\', '/')):
+                  failures.append(('package.json', f'build packages credential material: {value}'))
+                elif isinstance(value, list):
+                  for item in value:
+                    walk(item)
+                elif isinstance(value, dict):
+                  for item in value.values():
+                    walk(item)
+              walk({k: build.get(k) for k in ('files', 'extraFiles', 'extraResources') if k in build})
+
+          for warning in sorted(set(warnings))[:150]:
+            print(f'::warning::{warning}')
+          if historical:
+            print('::warning::Credential-like material/filenames exist in Git history; rotate/revoke affected credentials before treating them as safe.')
+            for path, label in sorted(set(historical))[:150]:
+              print(f' history: {path}: {label}')
+          if failures:
+            print('Blocking security findings:')
+            for path, label in sorted(set(failures)):
+              print(f' - {path}: {label}')
+            sys.exit(1)
+          print('Credential/history/workflow/packaging audit passed.')
+          PY
+
+      - name: Audit production and build dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ] && [ -f package.json ]; then
+            npm ci --ignore-scripts
+            npm audit --omit=dev --audit-level=high
+            npm audit --audit-level=critical
+          elif [ -f pnpm-lock.yaml ] && [ -f package.json ]; then
+            corepack enable
+            pnpm install --frozen-lockfile --ignore-scripts
+            pnpm audit --prod --audit-level high
+            pnpm audit --audit-level critical
+          elif [ -f yarn.lock ] && [ -f package.json ]; then
+            echo 'Unsupported Yarn advisory audit coverage; refusing false-green result.' >&2
+            exit 1
+          elif [ -f bun.lock ] || [ -f bun.lockb ]; then
+            echo 'Unsupported Bun advisory audit coverage; refusing false-green result.' >&2
+            exit 1
+          elif [ -f package.json ]; then
+            echo 'Node manifest lacks supported lockfile; refusing non-reproducible audit.' >&2
+            exit 1
+          fi
+
+          if [ -f requirements.txt ]; then
+            python -m pip install --disable-pip-version-check -q pip-audit
+            pip-audit -r requirements.txt
+          elif [ -f pyproject.toml ] || [ -f poetry.lock ] || [ -f uv.lock ]; then
+            echo 'Python project metadata lacks requirements.txt audit path; refusing incomplete coverage.' >&2
+            exit 1
+          fi
