@@ -1389,10 +1389,18 @@ Official MongoDB Agent Skills for agentic workflows — connection management, s
 <details>
 <summary><h3 style="display:inline">Skills by FarmDash</h3></summary>
 
-Official DeFi farming intelligence and execution skills from the FarmDash team. Zero-custody architecture across all skills.
+Official DeFi intelligence skills from the FarmDash team. Zero-custody architecture: useful on-chain intelligence without handing a skill unrestricted wallet control.
 
-- **[farmdash/trail-intelligence](https://farmdash.one/openclaw-skills/farmdash-trail-intelligence/SKILL.md)** - DeFi farming research: Trail Heat scoring, sybil audits, portfolio simulation, and analysis-to-action workflows
-- **[farmdash/signal-architect](https://farmdash.one/openclaw-skills/farmdash-signal-architect/SKILL.md)** - Zero-custody spot and cross-chain swap execution with referral routing and 75bps transparent fees
+- **[Parmasanandgarlic/farmdash-trail-intelligence](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-trail-intelligence)** - DeFi research: Trail Heat scores, sybil audits, simulations
+- **[Parmasanandgarlic/farmdash-signal-architect](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-signal-architect)** - User-signed swap planning with simulation gates
+- **[Parmasanandgarlic/farmdash-futures-strategist](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-futures-strategist)** - Hyperliquid perps research, sizing, signed orders
+- **[Parmasanandgarlic/farmdash-camp-guard](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-camp-guard)** - Pre-sign safety verdicts, allowance audits
+- **[Parmasanandgarlic/farmdash-wagon-steward](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-wagon-steward)** - Portfolio watch: health, drift, idle capital
+- **[Parmasanandgarlic/farmdash-hedge-warden](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-hedge-warden)** - Delta-neutral hedge sizing with bounds
+- **[Parmasanandgarlic/farmdash-ledger-keeper](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-ledger-keeper)** - On-chain accounting exports, realized PnL
+- **[Parmasanandgarlic/farmdash-supply-master](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-supply-master)** - Lending and yield pool comparison
+- **[Parmasanandgarlic/farmdash-trail-marshal](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-trail-marshal)** - Multi-step DeFi workflow composition
+- **[Parmasanandgarlic/farmdash-autonomous-operator](https://github.com/Parmasanandgarlic/farmdash-openclaw-skills/tree/main/farmdash-autonomous-operator)** - Human-gated supervised operator routines
 
 </details>
 <br/>
